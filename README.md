@@ -107,9 +107,10 @@ hardware: Farm Manager backend, GPU discovery/validation, GPU selection
 persistence, Resource Pools & tagging, job submission, and a resource-aware
 scheduler.
 
-**Not yet implemented** (see the next agent's detailed handoff plan in the
-session's `plan.md` artifact for scope, open questions, and recommended
-order): full local/cloud training workflows end-to-end (submit → run the
-real training backend → complete), monitoring/telemetry history, file
-distribution with delta sync + resumable transfer, the web dashboard, and
-the packaged Windows worker-client EXE.
+**Not yet implemented**: full local/cloud training workflows end-to-end
+(submit → run the real training backend → complete), monitoring/telemetry
+history, file distribution with delta sync + resumable transfer, the web
+dashboard, and the packaged Windows worker-client EXE.
+
+See [`docs/NEXT_STEPS.md`](docs/NEXT_STEPS.md) for the detailed handoff
+plan: known gaps, open design questions, and recommended phase order.
