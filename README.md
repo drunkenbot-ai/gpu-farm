@@ -102,8 +102,14 @@ preventing over-allocation onto an already-saturated machine.
 
 ## Status
 
-Early scaffold. See the project plan for phased rollout: GPU discovery/
-validation, GPU selection persistence, resource pools & tagging, local/cloud
-workflows, monitoring history, file distribution with delta sync, the web
-dashboard, and the packaged Windows worker-client EXE are not implemented
-yet.
+Phases 1-6 of the phased rollout are implemented and verified against real
+hardware: Farm Manager backend, GPU discovery/validation, GPU selection
+persistence, Resource Pools & tagging, job submission, and a resource-aware
+scheduler.
+
+**Not yet implemented** (see the next agent's detailed handoff plan in the
+session's `plan.md` artifact for scope, open questions, and recommended
+order): full local/cloud training workflows end-to-end (submit → run the
+real training backend → complete), monitoring/telemetry history, file
+distribution with delta sync + resumable transfer, the web dashboard, and
+the packaged Windows worker-client EXE.
