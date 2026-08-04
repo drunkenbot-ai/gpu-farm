@@ -174,6 +174,39 @@ def discover_and_validate(min_vram_gb: float = MIN_VRAM_GB) -> list[GpuValidatio
     return [validate_gpu(gpu, min_vram_gb) for gpu in discover_gpus()]
 
 
+def gpu_info_from_jsonable(entry: dict[str, Any]) -> GpuInfo:
+    """Rebuild a `GpuInfo` from a `GpuInfo.to_jsonable()`-shaped dict.
+
+    Used both to re-validate GPUs a remote worker self-reports and to
+    reconstruct GPUs previously stored in a worker's registered capabilities.
+
+    Args:
+        entry: Dict shaped like `GpuInfo.to_jsonable()`.
+
+    Returns:
+        Reconstructed `GpuInfo`.
+    """
+
+    return GpuInfo(
+        index=int(entry.get("index", 0)),
+        name=str(entry.get("name", "unknown")),
+        vendor=str(entry.get("vendor", "NVIDIA")),
+        uuid=entry.get("uuid"),
+        vram_total_mb=entry.get("vram_total_mb"),
+        vram_free_mb=entry.get("vram_free_mb"),
+        vram_used_mb=entry.get("vram_used_mb"),
+        utilization_percent=entry.get("utilization_percent"),
+        temperature_c=entry.get("temperature_c"),
+        power_watts=entry.get("power_watts"),
+        driver_version=entry.get("driver_version"),
+        pci_id=entry.get("pci_id"),
+        compute_capability=entry.get("compute_capability"),
+        cuda_version=entry.get("cuda_version"),
+        cuda_supported=bool(entry.get("cuda_supported", False)),
+        source=str(entry.get("source", "reported")),
+    )
+
+
 def _discover_via_nvidia_smi() -> list[GpuInfo]:
     """Detect GPUs by shelling out to `nvidia-smi --query-gpu`.
 

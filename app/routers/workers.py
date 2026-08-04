@@ -15,7 +15,7 @@ from fastapi import APIRouter, Body, Depends, Header, HTTPException
 
 from app.cloud_entitlement import validate_cloud_api_key
 from app.config import Settings, get_settings
-from app.gpu_discovery import GpuInfo, validate_gpu
+from app.gpu_discovery import gpu_info_from_jsonable, validate_gpu
 from app.job_manager import get_job_manager
 from app.ws import manager as ws_manager
 
@@ -67,7 +67,7 @@ async def register_worker(payload: dict[str, Any] = Body(...), manager=Depends(g
     worker_id = str(payload.get("worker_id", ""))
     reported_gpus = ((payload.get("capabilities") or {}).get("extra") or {}).get("gpus") or []
     if reported_gpus:
-        validations = [validate_gpu(_gpu_info_from_jsonable(entry)) for entry in reported_gpus]
+        validations = [validate_gpu(gpu_info_from_jsonable(entry)) for entry in reported_gpus]
         if not any(result.valid for result in validations):
             reasons = [reason for result in validations for reason in result.reasons]
             raise HTTPException(
@@ -78,29 +78,6 @@ async def register_worker(payload: dict[str, Any] = Body(...), manager=Depends(g
     response = manager.register_remote_worker(RegisterWorkerRequest.from_jsonable(payload))
     await ws_manager.broadcast({"type": "worker_registered", "worker_id": worker_id})
     return response.to_jsonable()
-
-
-def _gpu_info_from_jsonable(entry: dict[str, Any]) -> GpuInfo:
-    """Rebuild a `GpuInfo` from a worker-reported GPU dict for validation."""
-
-    return GpuInfo(
-        index=int(entry.get("index", 0)),
-        name=str(entry.get("name", "unknown")),
-        vendor=str(entry.get("vendor", "NVIDIA")),
-        uuid=entry.get("uuid"),
-        vram_total_mb=entry.get("vram_total_mb"),
-        vram_free_mb=entry.get("vram_free_mb"),
-        vram_used_mb=entry.get("vram_used_mb"),
-        utilization_percent=entry.get("utilization_percent"),
-        temperature_c=entry.get("temperature_c"),
-        power_watts=entry.get("power_watts"),
-        driver_version=entry.get("driver_version"),
-        pci_id=entry.get("pci_id"),
-        compute_capability=entry.get("compute_capability"),
-        cuda_version=entry.get("cuda_version"),
-        cuda_supported=bool(entry.get("cuda_supported", False)),
-        source=str(entry.get("source", "reported")),
-    )
 
 
 @router.post("/heartbeat")

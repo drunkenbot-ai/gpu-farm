@@ -45,6 +45,15 @@ uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
   PCI id, utilization, temperature, power)
 - `POST /gpu-discovery/validate` -- validate GPU records a remote worker
   self-reported at registration time
+- `GET /gpu-discovery/{worker_id}/selection` -- validated GPUs for a worker
+  annotated with a stable `identifier` and current `selected` state
+  (defaults to "all validated GPUs" until an explicit choice is saved)
+- `PUT /gpu-discovery/{worker_id}/selection` -- persist which validated
+  GPUs join the farm (`{"selected": [<identifier>, ...]}`); selections
+  survive Farm Manager restarts
+- `POST /gpu-discovery/local/register` -- (re-)register the Farm Manager's
+  own machine as worker `local`, using only its currently selected,
+  validated GPUs
 - `WS /ws` -- real-time worker/job event stream for dashboards
 - `GET /pools` -- placeholder (resource pools/tagging land in a later phase)
 
@@ -52,6 +61,12 @@ Worker registration (`POST /register`) enforces goals.md's "only validated
 GPUs can participate in the farm" rule: if a worker reports GPUs under
 `capabilities.extra.gpus` and none pass validation (NVIDIA + CUDA + ≥4GB
 VRAM + healthy driver), registration is rejected with HTTP 422.
+
+GPU selection (`app/gpu_selection.py`) is a separate concern layered on top
+of validation: an operator can further narrow a worker's *validated* GPUs
+down to the subset that should actually join the farm (individual,
+multiple, or all), persisted per worker in
+`~/.drunkenbot_ide/gpu_farm/gpu_selection.json`.
 
 ## Status
 
