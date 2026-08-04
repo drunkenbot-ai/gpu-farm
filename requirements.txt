@@ -1,0 +1,23 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+websockets>=12.0
+sqlalchemy>=2.0
+pydantic>=2.6
+pydantic-settings>=2.2
+httpx>=0.27
+python-dotenv>=1.0
+
+# engine/ (submodule) runtime dependencies needed to import
+# engine.coordinator / engine.contracts / engine.worker.
+# The import chain pulls in the full training engine (dataset/tokenizer
+# code), not just the coordinator, hence the extra packages below.
+numpy
+torch
+tqdm
+psutil
+cryptography
+pycryptodome
+PyPDF2
+nltk
+tokenizers
+datasets
