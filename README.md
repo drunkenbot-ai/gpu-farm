@@ -40,8 +40,18 @@ uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 - `GET /workers`, `POST /register`, `POST /heartbeat`, `POST /stale-workers`
 - `GET /jobs`, `POST /claim-job`, `POST /progress`, `POST /complete`,
   `POST /fail`, `POST /pause-all`, `POST /resume-all`, `POST /stop-all`
+- `GET /gpu-discovery` -- detect + validate GPUs on the Farm Manager's own
+  machine (name, vendor, VRAM, CUDA version, compute capability, driver,
+  PCI id, utilization, temperature, power)
+- `POST /gpu-discovery/validate` -- validate GPU records a remote worker
+  self-reported at registration time
 - `WS /ws` -- real-time worker/job event stream for dashboards
 - `GET /pools` -- placeholder (resource pools/tagging land in a later phase)
+
+Worker registration (`POST /register`) enforces goals.md's "only validated
+GPUs can participate in the farm" rule: if a worker reports GPUs under
+`capabilities.extra.gpus` and none pass validation (NVIDIA + CUDA + ≥4GB
+VRAM + healthy driver), registration is rejected with HTTP 422.
 
 ## Status
 
