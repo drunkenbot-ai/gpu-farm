@@ -37,6 +37,15 @@ class Settings(BaseSettings):
 
     stale_worker_timeout_seconds: int = 30
 
+    # Scheduler resource-health thresholds (goals.md section 6): a worker
+    # exceeding any of these is treated as unavailable for new work even if
+    # it calls /claim-job, preventing over-allocation onto an already
+    # saturated machine.
+    scheduler_max_gpu_utilization_percent: float = 95.0
+    scheduler_max_cpu_percent: float = 90.0
+    scheduler_min_free_ram_gb: float = 1.0
+    scheduler_min_free_disk_gb: float = 5.0
+
 
 @lru_cache
 def get_settings() -> Settings:

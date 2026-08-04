@@ -32,6 +32,7 @@ from app.gpu_selection import (
     selected_gpus,
 )
 from app.job_manager import get_job_manager
+from app.scheduler import local_system_resources
 
 router = APIRouter(prefix="/gpu-discovery", tags=["gpu-discovery"])
 
@@ -163,11 +164,20 @@ def register_local_worker(
     validations = discover_and_validate()
     chosen = selected_gpus(LOCAL_WORKER_ID, validations, store)
     total_vram_gb = sum(gpu.vram_total_gb or 0.0 for gpu in chosen) or None
+    resources = local_system_resources()
     capabilities = WorkerCapabilities(
+        hostname=resources.get("hostname"),
+        cpu_count=resources.get("cpu_count"),
+        system_ram_gb=resources.get("system_ram_gb"),
         gpu_names=[gpu.name for gpu in chosen],
         total_vram_gb=total_vram_gb,
         supports_cuda=any(gpu.cuda_supported for gpu in chosen),
-        extra={"gpus": [gpu.to_jsonable() for gpu in chosen]},
+        extra={
+            "gpus": [gpu.to_jsonable() for gpu in chosen],
+            "cpu_percent": resources.get("cpu_percent"),
+            "ram_percent": resources.get("ram_percent"),
+            "disk_free_gb": resources.get("disk_free_gb"),
+        },
     )
     request = RegisterWorkerRequest(
         worker_id=LOCAL_WORKER_ID,

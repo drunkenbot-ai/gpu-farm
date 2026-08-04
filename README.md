@@ -38,8 +38,15 @@ uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 
 - `GET /health` -- farm status summary
 - `GET /workers`, `POST /register`, `POST /heartbeat`, `POST /stale-workers`
-- `GET /jobs`, `POST /claim-job`, `POST /progress`, `POST /complete`,
-  `POST /fail`, `POST /pause-all`, `POST /resume-all`, `POST /stop-all`
+- `GET /jobs` -- list all known training jobs
+- `POST /jobs` -- submit a new training job (`{"job": <TrainingJobSpec>,
+  "resource_pool_id": str?}`); cloud jobs require the same
+  `Authorization: Bearer` key as cloud worker registration
+- `GET /jobs/schedule-preview` -- dry-run the scheduler for hypothetical
+  requirements (`backend`, `min_vram_gb`, `resource_pool_id`), showing
+  every worker's current eligibility and why not
+- `POST /claim-job`, `POST /progress`, `POST /complete`, `POST /fail`,
+  `POST /pause-all`, `POST /resume-all`, `POST /stop-all`
 - `GET /gpu-discovery` -- detect + validate GPUs on the Farm Manager's own
   machine (name, vendor, VRAM, CUDA version, compute capability, driver,
   PCI id, utilization, temperature, power)
@@ -83,6 +90,15 @@ explicitly added GPUs and any GPU matching all of the pool's rules (vendor,
 model, compute capability, VRAM size, driver version, machine, tags), so a
 GPU can belong to multiple pools at once. Pool/tag data is persisted at
 `~/.drunkenbot_ide/gpu_farm/pools.json` and `.../tags.json`.
+
+The scheduler (`app/scheduler.py`) layers goals.md section 6's remaining
+requirements on top of the engine's own backend/VRAM/tag claim matching:
+resource pool selection, live CPU/RAM/disk/GPU utilization thresholds
+(`SCHEDULER_MAX_*`/`SCHEDULER_MIN_*` env vars), and local-vs-cloud
+entitlement. A worker that is nominally "available" but reports
+utilization/CPU/RAM/disk past the configured limit on a `/claim-job` poll
+is told there's no job for it (without touching the engine's queue),
+preventing over-allocation onto an already-saturated machine.
 
 ## Status
 
