@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routers import gpu_discovery, health, jobs, pools, websocket, workers
+from app.routers import gpu_discovery, health, jobs, pools, tags, websocket, workers
 
 settings = get_settings()
 
@@ -33,6 +33,7 @@ app.include_router(health.router)
 app.include_router(workers.router)
 app.include_router(jobs.router)
 app.include_router(pools.router)
+app.include_router(tags.router)
 app.include_router(gpu_discovery.router)
 app.include_router(websocket.router)
 

@@ -55,7 +55,15 @@ uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
   own machine as worker `local`, using only its currently selected,
   validated GPUs
 - `WS /ws` -- real-time worker/job event stream for dashboards
-- `GET /pools` -- placeholder (resource pools/tagging land in a later phase)
+- `GET/POST /pools`, `GET/PUT/DELETE /pools/{id}` -- Resource Pool CRUD;
+  each pool response includes live `stats` (GPU/available/busy counts,
+  total VRAM, average utilization) and resolved `gpus`
+- `POST /pools/{id}/members`, `DELETE /pools/{id}/members/{worker_id}/{identifier}`
+  -- manually add/remove one GPU from a pool (on top of any rule-based membership)
+- `GET /tags` -- every farm GPU with its combined auto-derived (vendor,
+  model, CUDA major, VRAM bucket) + manually-assigned tags
+- `GET/PUT /tags/workers/{worker_id}`, `GET/PUT /tags/workers/{worker_id}/gpus/{identifier}`
+  -- view/persist manual tags for a worker or one of its GPUs
 
 Worker registration (`POST /register`) enforces goals.md's "only validated
 GPUs can participate in the farm" rule: if a worker reports GPUs under
@@ -67,6 +75,14 @@ of validation: an operator can further narrow a worker's *validated* GPUs
 down to the subset that should actually join the farm (individual,
 multiple, or all), persisted per worker in
 `~/.drunkenbot_ide/gpu_farm/gpu_selection.json`.
+
+Resource Pools (`app/pools.py`) and tags (`app/tagging.py`) operate on the
+farm-wide GPU inventory (`app/gpu_inventory.py`), built from every
+registered worker's joined GPUs. A pool's membership is the union of
+explicitly added GPUs and any GPU matching all of the pool's rules (vendor,
+model, compute capability, VRAM size, driver version, machine, tags), so a
+GPU can belong to multiple pools at once. Pool/tag data is persisted at
+`~/.drunkenbot_ide/gpu_farm/pools.json` and `.../tags.json`.
 
 ## Status
 
