@@ -2,6 +2,7 @@ fastapi>=0.110
 uvicorn[standard]>=0.29
 websockets>=12.0
 sqlalchemy>=2.0
+alembic>=1.13
 pydantic>=2.6
 pydantic-settings>=2.2
 httpx>=0.27
@@ -15,6 +16,7 @@ pyinstaller>=6.0
 pytest>=8.0
 pystray>=0.19
 Pillow>=10.0
+keyring>=25.0
 
 # engine/ (submodule) runtime dependencies needed to import
 # engine.coordinator / engine.contracts / engine.worker.

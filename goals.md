@@ -500,15 +500,20 @@ The system should remain scalable and extensible for future expansion.
 
 The initial private-farm goal and the principal cloud workflow are now
 implemented. Local and cloud jobs execute the existing engine end-to-end;
-cloud access validates API keys and reports idempotent GPU-hour usage to
-cloud-service. Worker telemetry is persisted, project files use cached
+cloud access validates API keys, reserves estimated GPU-hours before dispatch,
+and reports idempotent GPU-hour usage to cloud-service. Worker telemetry is persisted, project files use cached
 hash-manifest delta synchronization with resumable transfer, and completed
 outputs are uploaded to the manager.
 
-A dashboard, per-job lifecycle controls, a Windows tray worker with an
-autostart option, and a PyInstaller EXE build path are present. Remaining work
-before a production/public release includes database migrations, secured Farm
-Manager access and CORS, secure worker key storage, pre-dispatch cloud quota
-reservation, installer/signing/update infrastructure, richer dashboard UX,
-multi-GPU/multi-worker execution, and telemetry retention/aggregation. See
-`plan.md` for the detailed handoff plan.
+A dashboard with job submission, pool controls, cloud entitlement and output
+links, per-job lifecycle controls, a Windows tray worker with an
+autostart option, a PyInstaller EXE build path, and an Inno Setup installer
+definition with hash-verified update-manifest checking are present. Remaining work
+before a production/public release includes future cloud-service schema
+migrations, installer/signing/update infrastructure,
+richer dashboard UX, multi-GPU/multi-worker execution, and telemetry
+retention/aggregation. Farm Manager now has configurable CORS, optional
+operator-token protection for job mutations, an Alembic baseline, and Windows
+Credential Manager storage for worker cloud keys. Operator mutations are also
+persisted to a protected audit history. See `plan.md` for the detailed handoff
+plan.

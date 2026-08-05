@@ -6,11 +6,12 @@ Run with:
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routers import artifacts, cloud, gpu_discovery, health, jobs, monitoring, pools, tags, websocket, workers
+from app.routers import artifacts, audit, cloud, gpu_discovery, health, jobs, monitoring, pools, tags, websocket, workers
+from app.audit_log import record as record_audit
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
@@ -22,11 +23,11 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# Dashboard SPA (Phase 9) will be served from a different origin during
-# development; restrict this before shipping to production origins only.
+# The dashboard is same-origin in production. Explicit origins keep a separate
+# development UI usable without exposing the API to arbitrary web pages.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.parsed_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -41,9 +42,28 @@ app.include_router(websocket.router)
 app.include_router(monitoring.router)
 app.include_router(artifacts.router)
 app.include_router(cloud.router)
+app.include_router(audit.router)
 dashboard_dir = Path(__file__).parent / "dashboard"
 if dashboard_dir.exists():
     app.mount("/dashboard", StaticFiles(directory=dashboard_dir, html=True), name="dashboard")
+
+
+@app.middleware("http")
+async def audit_operator_mutations(request: Request, call_next):
+    """Record sensitive operator mutations without retaining request bodies."""
+    response = await call_next(request)
+    path = request.url.path
+    sensitive = (
+        (path == "/jobs" and request.method == "POST") or
+        path in {"/pause-all", "/resume-all", "/stop-all"} or
+        (path.startswith("/jobs/") and request.method == "POST") or
+        (path.startswith("/pools") and request.method in {"POST", "PUT", "DELETE"}) or
+        (path.startswith("/tags") and request.method in {"PUT", "POST", "DELETE"}) or
+        (path.startswith("/gpu-discovery") and request.method in {"PUT", "POST", "DELETE"})
+    )
+    if sensitive:
+        record_audit("operator-token" if request.headers.get("x-farm-admin-token") else "local-operator", request.method, path, response.status_code, request.client.host if request.client else None)
+    return response
 
 
 @app.get("/")

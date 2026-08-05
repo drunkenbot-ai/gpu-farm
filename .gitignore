@@ -221,4 +221,8 @@ __marimo__/
 # GPU Farm Manager local state
 farm_manager.db
 coordinator_state.sqlite3
+migration_check.sqlite
+migration_audit_check.sqlite
+.pytest_tmp_run/
+.pytest_tmp*/
 artifacts/

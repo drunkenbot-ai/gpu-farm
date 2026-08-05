@@ -22,7 +22,7 @@ from engine.contracts import (
 )
 from fastapi import APIRouter, Body, Depends, Header, HTTPException
 
-from app.cloud_entitlement import validate_cloud_api_key
+from app.cloud_entitlement import release_cloud_reservation, reserve_cloud_usage, validate_cloud_api_key
 from app.config import Settings, get_settings
 from app.job_manager import get_job_manager
 from app.pools import PoolStore, get_pool_store
@@ -31,6 +31,7 @@ from app.tagging import TagStore, get_tag_store
 from app.ws import manager as ws_manager
 from app.telemetry import record
 from app.cloud_usage import complete as complete_cloud_usage, start as start_cloud_usage
+from app.security import require_operator
 from engine.coordinator.artifacts import create_job_artifact_bundle, create_job_project_tree
 
 router = APIRouter(tags=["jobs"])
@@ -66,7 +67,7 @@ def schedule_preview(
     return {"requirements": requirements.__dict__, "workers": [r.to_jsonable() for r in results]}
 
 
-@router.post("/jobs")
+@router.post("/jobs", dependencies=[Depends(require_operator)])
 async def submit_job(
     payload: dict[str, Any] = Body(...),
     authorization: str = Header(default=""),
@@ -101,6 +102,7 @@ async def submit_job(
     except (KeyError, TypeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=f"Invalid job spec: {exc}") from exc
 
+    cloud_api_key: str | None = None
     if job.runtime.backend == BackendKind.CLOUD and settings.farm_mode == "cloud":
         if not authorization.startswith("Bearer "):
             raise HTTPException(status_code=401, detail="Missing cloud GPU-hours API key.")
@@ -109,6 +111,14 @@ async def submit_job(
             raise HTTPException(status_code=403, detail=result.reason or "Invalid cloud entitlement.")
         job.metadata["cloud_account_id"] = result.account_id
         job.metadata["cloud_quota_gpu_hours"] = result.quota_gpu_hours_per_month
+        try:
+            reserved_hours = float(payload.get("estimated_gpu_hours", job.metadata.get("estimated_gpu_hours", 1.0)))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="estimated_gpu_hours must be a positive number.") from exc
+        if reserved_hours <= 0:
+            raise HTTPException(status_code=400, detail="estimated_gpu_hours must be greater than zero.")
+        cloud_api_key = authorization.removeprefix("Bearer ").strip()
+        job.metadata["cloud_reservation_gpu_hours"] = reserved_hours
 
     resource_pool_id = payload.get("resource_pool_id")
     if resource_pool_id:
@@ -130,6 +140,14 @@ async def submit_job(
         create_job_artifact_bundle(job, artifact_root=settings.artifact_root)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if cloud_api_key:
+        accepted, reason = await reserve_cloud_usage(
+            cloud_api_key,
+            {"job_id": job.job_id, "gpu_hours": job.metadata["cloud_reservation_gpu_hours"], "gpu_count": 1},
+            settings,
+        )
+        if not accepted:
+            raise HTTPException(status_code=403, detail=reason or "Cloud GPU-hours quota reservation was rejected.")
     job_id = manager.submit(job)
     await ws_manager.broadcast({"type": "job_submitted", "job_id": job_id})
     return {"job_id": job_id, "job": manager.get_job(job_id).spec.to_jsonable()}
@@ -193,45 +211,47 @@ async def complete_job(payload: dict[str, Any] = Body(...), manager=Depends(get_
 
 
 @router.post("/fail")
-async def fail_job(payload: dict[str, Any] = Body(...), manager=Depends(get_job_manager)) -> dict[str, Any]:
+async def fail_job(payload: dict[str, Any] = Body(...), authorization: str = Header(default=""), manager=Depends(get_job_manager), settings: Settings = Depends(get_settings)) -> dict[str, Any]:
     """Mark a job failed and broadcast the failure."""
 
     response = manager.handle_fail_job(FailJobRequest.from_jsonable(payload))
+    await _release_cloud_hold(str(payload.get("job_id", "")), authorization, manager, settings)
     await ws_manager.broadcast({"type": "job_failed", "job_id": payload.get("job_id")})
     return response.to_jsonable()
 
 
-@router.post("/pause-all")
+@router.post("/pause-all", dependencies=[Depends(require_operator)])
 def pause_all(manager=Depends(get_job_manager)) -> dict[str, Any]:
     """Pause every running job."""
 
     return {"paused": manager.pause_all_jobs()}
 
 
-@router.post("/resume-all")
+@router.post("/resume-all", dependencies=[Depends(require_operator)])
 def resume_all(manager=Depends(get_job_manager)) -> dict[str, Any]:
     """Resume every paused job."""
 
     return {"resumed": manager.resume_all_jobs()}
 
 
-@router.post("/stop-all")
+@router.post("/stop-all", dependencies=[Depends(require_operator)])
 def stop_all(manager=Depends(get_job_manager)) -> dict[str, Any]:
     """Stop every running/queued job."""
 
     return {"stopping": manager.stop_all_jobs()}
 
 
-@router.post("/jobs/{job_id}/cancel")
-async def cancel_job(job_id: str, manager=Depends(get_job_manager)) -> dict[str, Any]:
+@router.post("/jobs/{job_id}/cancel", dependencies=[Depends(require_operator)])
+async def cancel_job(job_id: str, authorization: str = Header(default=""), manager=Depends(get_job_manager), settings: Settings = Depends(get_settings)) -> dict[str, Any]:
     """Cooperatively cancel one queued or running job."""
     try: manager.cancel(job_id)
     except KeyError as exc: raise HTTPException(404, "Job not found") from exc
+    await _release_cloud_hold(job_id, authorization, manager, settings)
     await ws_manager.broadcast({"type": "job_stopping", "job_id": job_id})
     return {"job_id": job_id, "status": "stopping"}
 
 
-@router.post("/jobs/{job_id}/pause")
+@router.post("/jobs/{job_id}/pause", dependencies=[Depends(require_operator)])
 async def pause_job(job_id: str, manager=Depends(get_job_manager)) -> dict[str, Any]:
     try: managed = manager.get_job(job_id)
     except KeyError as exc: raise HTTPException(404, "Job not found") from exc
@@ -241,7 +261,7 @@ async def pause_job(job_id: str, manager=Depends(get_job_manager)) -> dict[str, 
     return {"job_id": job_id, "status": "paused"}
 
 
-@router.post("/jobs/{job_id}/resume")
+@router.post("/jobs/{job_id}/resume", dependencies=[Depends(require_operator)])
 async def resume_job(job_id: str, manager=Depends(get_job_manager)) -> dict[str, Any]:
     try: managed = manager.get_job(job_id)
     except KeyError as exc: raise HTTPException(404, "Job not found") from exc
@@ -251,7 +271,7 @@ async def resume_job(job_id: str, manager=Depends(get_job_manager)) -> dict[str,
     return {"job_id": job_id, "status": "queued"}
 
 
-@router.post("/jobs/{job_id}/restart")
+@router.post("/jobs/{job_id}/restart", dependencies=[Depends(require_operator)])
 async def restart_job(job_id: str, settings: Settings = Depends(get_settings), manager=Depends(get_job_manager)) -> dict[str, Any]:
     """Clone a completed/failed job into a fresh queued attempt."""
     try: original = manager.get_job(job_id).spec
@@ -262,3 +282,21 @@ async def restart_job(job_id: str, settings: Settings = Depends(get_settings), m
     manager.submit(clone)
     await ws_manager.broadcast({"type": "job_restarted", "job_id": clone.job_id, "restarted_from_job_id": job_id})
     return {"job_id": clone.job_id, "restarted_from_job_id": job_id}
+
+
+async def _release_cloud_hold(job_id: str, authorization: str, manager, settings: Settings) -> None:
+    """Best-effort release. API keys are deliberately never persisted by the manager."""
+    if not authorization.startswith("Bearer "):
+        return
+    try:
+        job = manager.get_job(job_id).spec
+    except KeyError:
+        return
+    hours = job.metadata.get("cloud_reservation_gpu_hours")
+    if job.runtime.backend != BackendKind.CLOUD or not hours:
+        return
+    await release_cloud_reservation(
+        authorization.removeprefix("Bearer ").strip(),
+        {"job_id": job_id, "gpu_hours": hours, "gpu_count": 1},
+        settings,
+    )

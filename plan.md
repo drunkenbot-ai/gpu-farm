@@ -16,8 +16,10 @@ implemented across `gpu-farm`, its `engine` submodule, and the sibling
    project sync → real engine training → progress telemetry → output upload →
    completion. This was verified through `scripts/e2e_smoke.py`.
 3. **Cloud workflow** — API-key-gated cloud workers/jobs, a durable manager
-   GPU-hour ledger, and replayable reporting. Sibling `cloud-service` now
-   provides authenticated, quota-enforced, idempotent `POST /auth/report-usage`.
+   GPU-hour ledger, pre-dispatch quota reservations, and replayable reporting.
+   Sibling `cloud-service` now provides authenticated, quota-enforced,
+   idempotent `POST /auth/reserve-usage`, `/auth/release-reservation`, and
+   `/auth/report-usage`.
    A local cross-service cloud job completed and reported usage successfully.
 4. **Monitoring and distribution** — SQLite history captures CPU/RAM/disk/
    network/GPU heartbeat snapshots and progress. Hash manifests, HTTP Range
@@ -27,30 +29,40 @@ implemented across `gpu-farm`, its `engine` submodule, and the sibling
    jobs, telemetry, and job controls. The Windows tray worker supports
    per-user autostart. `scripts/build_worker.ps1` builds `GPUFarmWorker.exe`;
    a ~210 MB EXE was produced.
-6. **Tests** — `gpu-farm` has four passing FastAPI regression tests;
-   `cloud-service` has 34 passing tests, including GPU-hour quota and
+6. **Production hardening baseline** — Farm Manager has configurable explicit
+   CORS origins, optional `FARM_ADMIN_TOKEN` protection for job mutations,
+   Windows Credential Manager storage for cloud worker keys, and an Alembic
+   baseline for telemetry/cloud usage tables. Operator mutations are retained
+   in a protected, durable audit trail.
+7. **Tests** — `gpu-farm` has five passing FastAPI regression tests;
+   `cloud-service` has 36 passing tests, including GPU-hour quota,
    idempotency coverage.
 
 ## Remaining work
 
 ### Production hardening
 
-1. Add Alembic migrations to both services; SQLite `create_all` is only a
-   local-development migration strategy.
-2. Configure restrictive CORS and Farm Manager authentication/authorization.
-3. Move worker cloud keys from command-line arguments to Windows Credential
-   Manager or another secure secret-delivery mechanism.
-4. Add retry/backoff, visibility, and alerts for failed cloud usage reports.
-5. Add cloud quota reservation/release before dispatch. Current reporting
-   debits after completion, so it cannot reserve capacity across managers.
+1. Extend Farm Manager and cloud-service migration chains to cover future
+   coordinator state changes. Both services now have an Alembic baseline.
+2. Extend optional Farm Manager token protection into full operator roles and
+   require it in production deployment configuration. Basic audit logging is
+   complete; role identity and richer audit details remain.
+3. Add retry/backoff, visibility, and alerts for failed cloud usage reports
+   and reservation releases. The Farm Manager deliberately does not persist
+   customer API keys, so an authenticated caller supplies one for early hold
+   release on cancellation/failure.
 
 ### Product completeness
 
-1. Expand the dashboard: submission UI, pool/tag editors, filtering, charts,
-   output download links, and cloud entitlement display.
+1. Add dashboard GPU-tag editing, filtering, and telemetry charts. Submission,
+   pool creation/deletion, output downloads, and cloud entitlement display are
+   complete.
 2. Add tray configuration screens for manager URL, API-key storage, and GPU
    selection. The existing tray host handles lifecycle/autostart only.
-3. Add signed installer, update path, and clean-machine EXE smoke test.
+3. Sign the Inno Setup Windows installer and run the clean-machine EXE smoke
+   test. Installer build scripts and a hash-verified release-manifest update
+   check are complete; certificate-backed Authenticode signing and a clean
+   Windows test host remain.
 4. Implement multi-GPU/multi-worker jobs and strict multi-member pool claim
    enforcement. Current jobs are single-worker and broad pool matching is
    advisory unless it resolves to exactly one worker.
@@ -67,6 +79,6 @@ implemented across `gpu-farm`, its `engine` submodule, and the sibling
 ## Suggested next order
 
 1. Commit the engine, cloud-service, and GPU Farm changes intentionally.
-2. Add migrations, secure configuration, and cloud quota reservations.
+2. Add cloud-service migrations and complete operator roles/auditing.
 3. Package/sign/test the worker on a clean Windows machine.
 4. Finish dashboard UX and multi-GPU scheduling.

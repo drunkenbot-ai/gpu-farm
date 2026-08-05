@@ -48,3 +48,12 @@ def test_cloud_usage_ledger_tracks_pending_completion(monkeypatch, tmp_path) -> 
     state = summary("account-1")
     assert state["usage_records"] == 1 and state["pending_reports"] == 1
     assert pending("account-1")[0]["gpu_count"] == 2
+
+
+def test_operator_token_protects_job_mutations(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("FARM_ADMIN_TOKEN", "test-operator-secret")
+    client = _client(monkeypatch, tmp_path)
+    assert client.post("/pause-all").status_code == 401
+    assert client.post("/pause-all", headers={"X-Farm-Admin-Token": "test-operator-secret"}).status_code == 200
+    events = client.get("/audit", headers={"X-Farm-Admin-Token": "test-operator-secret"}).json()["events"]
+    assert events[-1]["path"] == "/pause-all" and events[-1]["status_code"] == 200

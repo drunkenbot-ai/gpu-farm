@@ -74,3 +74,26 @@ async def report_cloud_usage(api_key: str, usage: dict, settings: Settings) -> t
         return False, f"cloud-service returned HTTP {response.status_code}"
     payload = response.json()
     return bool(payload.get("accepted", payload.get("ok", True))), str(payload.get("reason", ""))
+
+
+async def reserve_cloud_usage(api_key: str, reservation: dict, settings: Settings) -> tuple[bool, str]:
+    """Reserve estimated GPU-hours before a cloud job enters the queue."""
+    return await _post_cloud_usage_action("/auth/reserve-usage", api_key, reservation, settings)
+
+
+async def release_cloud_reservation(api_key: str, reservation: dict, settings: Settings) -> tuple[bool, str]:
+    """Release a cloud-job hold after it fails or is cancelled before billing."""
+    return await _post_cloud_usage_action("/auth/release-reservation", api_key, reservation, settings)
+
+
+async def _post_cloud_usage_action(path: str, api_key: str, payload: dict, settings: Settings) -> tuple[bool, str]:
+    url = f"{settings.cloud_service_url.rstrip('/')}{path}"
+    try:
+        async with httpx.AsyncClient(timeout=settings.cloud_service_timeout_seconds) as client:
+            response = await client.post(url, headers={"Authorization": f"Bearer {api_key}"}, json=payload)
+    except httpx.HTTPError as exc:
+        return False, f"cloud-service unreachable: {exc}"
+    if response.status_code != 200:
+        return False, f"cloud-service returned HTTP {response.status_code}"
+    result = response.json()
+    return bool(result.get("accepted", False)), str(result.get("reason", ""))

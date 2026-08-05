@@ -1,0 +1,5 @@
+{
+  "version": "0.1.0",
+  "installer_url": "https://downloads.example.com/GPUFarmWorker-Setup-0.1.0.exe",
+  "sha256": "replace-with-the-installer-sha256"
+}

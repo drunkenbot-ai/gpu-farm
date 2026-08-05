@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     cloud_service_timeout_seconds: float = 15.0
     cloud_usage_report_path: str = "/auth/report-usage"
 
+    # Comma-separated browser origins. Keep explicit in deployments; the
+    # dashboard served by this process does not require CORS at all.
+    cors_origins: str = "http://localhost:8080,http://127.0.0.1:8080"
+    farm_admin_token: str = ""
+
     stale_worker_timeout_seconds: int = 30
 
     # Scheduler resource-health thresholds (goals.md section 6): a worker
@@ -46,6 +51,11 @@ class Settings(BaseSettings):
     scheduler_max_cpu_percent: float = 90.0
     scheduler_min_free_ram_gb: float = 1.0
     scheduler_min_free_disk_gb: float = 5.0
+
+    @property
+    def parsed_cors_origins(self) -> list[str]:
+        """Return configured non-empty CORS origins."""
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
 
 @lru_cache

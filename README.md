@@ -63,7 +63,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
   validated GPUs
 - `WS /ws` -- real-time worker/job event stream for dashboards
 - `GET /monitoring/history` -- durable worker heartbeat and training-progress history
-- `GET /cloud/status`, `POST /cloud/report-usage` -- cloud entitlement, local GPU-hour ledger, and safe replay of completed usage to cloud-service
+- `GET /cloud/status`, `POST /cloud/report-usage` -- cloud entitlement, local GPU-hour ledger, and safe replay of completed usage to cloud-service; cloud jobs reserve estimated GPU-hours before queueing
 - `GET/PUT /artifacts/{path}` -- SHA-256 manifest (`/manifest`), HTTP Range download and resumable upload
 - `GET /artifacts/projects/{project_id}/tree-manifest` -- file-hash project manifest used by workers for changed-files-only synchronization
 - `GET/POST /pools`, `GET/PUT/DELETE /pools/{id}` -- Resource Pool CRUD;
@@ -109,13 +109,27 @@ preventing over-allocation onto an already-saturated machine.
 The core private-farm and cloud-farm workflows are implemented and verified.
 Real training jobs have completed end-to-end in both modes: submit → worker
 claim → verified project sync → engine training → telemetry/progress → output
-upload → completion. Cloud GPU-hour usage is reported through the sibling
-`cloud-service`'s idempotent `/auth/report-usage` endpoint.
+upload → completion. Cloud jobs reserve estimated GPU-hours (the
+`estimated_gpu_hours` submission value, defaulting to `1.0`) through the
+sibling `cloud-service` before queueing. Completed usage is idempotently
+reported through `/auth/report-usage`, which settles the hold to measured use.
 
 The manager persists telemetry history, performs changed-files-only project
 sync with resumable and hash-verified transfer, includes a live dashboard,
 and has a packaged Windows tray-worker EXE build path. See [plan.md](plan.md)
 for the remaining production-hardening and product-completeness work.
+
+Farm Manager-owned telemetry and cloud-usage tables have an Alembic baseline.
+Run `python -m alembic upgrade head` after setting `DATABASE_URL` for a new
+deployment. The sibling cloud-service now has the same baseline; run its
+`python -m alembic upgrade head` before production startup. Browser origins
+are configured with `CORS_ORIGINS` rather than an open wildcard.
+
+Set `FARM_ADMIN_TOKEN` in production to protect job submission and lifecycle
+mutations. Send it as `X-Farm-Admin-Token`. Cloud worker keys can be stored in
+Windows Credential Manager once with `--api-key <key> --store-api-key`; later
+cloud starts can omit `--api-key`. Remove it with `--delete-stored-api-key`.
+Operator mutations are retained in `GET /audit`, which uses the same token.
 
 ## Worker and dashboard
 
@@ -126,7 +140,18 @@ binary with `pyinstaller --noconfirm worker.spec`; the executable is emitted
 under `dist/GPUFarmWorker/` (or `dist/GPUFarmWorker.exe`, depending on the
 PyInstaller mode).
 
+The dashboard supports job submission from a pasted `TrainingJobSpec` JSON
+document, pool selection, cloud GPU-hour estimates, pool creation/deletion,
+cloud entitlement status, output downloads, and lifecycle controls.
+
 The packaged worker starts as a Windows tray app. Run it with
 `--install-autostart` to register per-user Windows startup, or
 `--remove-autostart` to remove that registration. Build reproducibly with
 `powershell -ExecutionPolicy Bypass -File scripts/build_worker.ps1 -Clean`.
+
+To create the Windows installer, install Inno Setup 6 and run
+`powershell -ExecutionPolicy Bypass -File scripts/build_worker.ps1 -Clean -Installer`.
+Publish its SHA-256 alongside `installer/release-manifest.example.json`; users
+can check a manifest without downloading code using `--check-update
+--update-manifest-url <https-url>`. Sign the EXE and installer with the
+production Authenticode certificate before release.
