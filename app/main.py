@@ -10,7 +10,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routers import gpu_discovery, health, jobs, pools, tags, websocket, workers
+from app.routers import artifacts, cloud, gpu_discovery, health, jobs, monitoring, pools, tags, websocket, workers
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 
 settings = get_settings()
 
@@ -36,6 +38,12 @@ app.include_router(pools.router)
 app.include_router(tags.router)
 app.include_router(gpu_discovery.router)
 app.include_router(websocket.router)
+app.include_router(monitoring.router)
+app.include_router(artifacts.router)
+app.include_router(cloud.router)
+dashboard_dir = Path(__file__).parent / "dashboard"
+if dashboard_dir.exists():
+    app.mount("/dashboard", StaticFiles(directory=dashboard_dir, html=True), name="dashboard")
 
 
 @app.get("/")

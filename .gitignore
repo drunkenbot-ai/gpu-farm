@@ -31,6 +31,7 @@ MANIFEST
 #   before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+!worker.spec
 
 # Installer logs
 pip-log.txt
@@ -219,4 +220,5 @@ __marimo__/
 
 # GPU Farm Manager local state
 farm_manager.db
+coordinator_state.sqlite3
 artifacts/

@@ -62,6 +62,10 @@ uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
   own machine as worker `local`, using only its currently selected,
   validated GPUs
 - `WS /ws` -- real-time worker/job event stream for dashboards
+- `GET /monitoring/history` -- durable worker heartbeat and training-progress history
+- `GET /cloud/status`, `POST /cloud/report-usage` -- cloud entitlement, local GPU-hour ledger, and safe replay of completed usage to cloud-service
+- `GET/PUT /artifacts/{path}` -- SHA-256 manifest (`/manifest`), HTTP Range download and resumable upload
+- `GET /artifacts/projects/{project_id}/tree-manifest` -- file-hash project manifest used by workers for changed-files-only synchronization
 - `GET/POST /pools`, `GET/PUT/DELETE /pools/{id}` -- Resource Pool CRUD;
   each pool response includes live `stats` (GPU/available/busy counts,
   total VRAM, average utilization) and resolved `gpus`
@@ -102,14 +106,27 @@ preventing over-allocation onto an already-saturated machine.
 
 ## Status
 
-Phases 1-6 of the phased rollout are implemented and verified against real
-hardware: Farm Manager backend, GPU discovery/validation, GPU selection
-persistence, Resource Pools & tagging, job submission, and a resource-aware
-scheduler.
+The core private-farm and cloud-farm workflows are implemented and verified.
+Real training jobs have completed end-to-end in both modes: submit → worker
+claim → verified project sync → engine training → telemetry/progress → output
+upload → completion. Cloud GPU-hour usage is reported through the sibling
+`cloud-service`'s idempotent `/auth/report-usage` endpoint.
 
-**Not yet implemented** (see the next agent's detailed handoff plan in the
-session's `plan.md` artifact for scope, open questions, and recommended
-order): full local/cloud training workflows end-to-end (submit → run the
-real training backend → complete), monitoring/telemetry history, file
-distribution with delta sync + resumable transfer, the web dashboard, and
-the packaged Windows worker-client EXE.
+The manager persists telemetry history, performs changed-files-only project
+sync with resumable and hash-verified transfer, includes a live dashboard,
+and has a packaged Windows tray-worker EXE build path. See [plan.md](plan.md)
+for the remaining production-hardening and product-completeness work.
+
+## Worker and dashboard
+
+Open `http://localhost:8080/dashboard/` for the live dashboard. Run a real
+local worker with `python -m app.worker_client --manager http://localhost:8080`
+(`--mode cloud --api-key <key>` claims cloud jobs). Build the no-Python-required Windows
+binary with `pyinstaller --noconfirm worker.spec`; the executable is emitted
+under `dist/GPUFarmWorker/` (or `dist/GPUFarmWorker.exe`, depending on the
+PyInstaller mode).
+
+The packaged worker starts as a Windows tray app. Run it with
+`--install-autostart` to register per-user Windows startup, or
+`--remove-autostart` to remove that registration. Build reproducibly with
+`powershell -ExecutionPolicy Bypass -File scripts/build_worker.ps1 -Clean`.

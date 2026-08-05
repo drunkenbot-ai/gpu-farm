@@ -11,6 +11,10 @@ python-dotenv>=1.0
 # nvidia-smi is the primary detection path and needs no extra dependency;
 # pynvml is a fallback for environments where shelling out isn't desired.
 pynvml>=11.5
+pyinstaller>=6.0
+pytest>=8.0
+pystray>=0.19
+Pillow>=10.0
 
 # engine/ (submodule) runtime dependencies needed to import
 # engine.coordinator / engine.contracts / engine.worker.

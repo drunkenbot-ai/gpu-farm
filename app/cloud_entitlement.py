@@ -60,3 +60,17 @@ async def validate_cloud_api_key(api_key: str, settings: Settings) -> Entitlemen
         quota_gpu_hours_per_month=payload.get("quota_gpu_hours_per_month"),
         account_id=payload.get("account_id"),
     )
+
+
+async def report_cloud_usage(api_key: str, usage: dict, settings: Settings) -> tuple[bool, str]:
+    """Submit one completed job's measured GPU-hours to cloud-service."""
+    url = f"{settings.cloud_service_url.rstrip('/')}{settings.cloud_usage_report_path}"
+    try:
+        async with httpx.AsyncClient(timeout=settings.cloud_service_timeout_seconds) as client:
+            response = await client.post(url, headers={"Authorization": f"Bearer {api_key}"}, json=usage)
+    except httpx.HTTPError as exc:
+        return False, f"cloud-service unreachable: {exc}"
+    if response.status_code != 200:
+        return False, f"cloud-service returned HTTP {response.status_code}"
+    payload = response.json()
+    return bool(payload.get("accepted", payload.get("ok", True))), str(payload.get("reason", ""))

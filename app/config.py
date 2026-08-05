@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     # deployment that owns /auth/validate-key entitlement checks.
     cloud_service_url: str = "https://cloud.drunkenbot.ai"
     cloud_service_timeout_seconds: float = 15.0
+    cloud_usage_report_path: str = "/auth/report-usage"
 
     stale_worker_timeout_seconds: int = 30
 

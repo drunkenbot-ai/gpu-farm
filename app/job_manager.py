@@ -12,6 +12,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from engine.coordinator.job_manager import JobManager
+from engine.coordinator.state_store import JobStateStore
 
 from app.config import get_settings
 
@@ -25,5 +26,10 @@ def get_job_manager() -> JobManager:
     """
 
     settings = get_settings()
-    Path(settings.artifact_root).mkdir(parents=True, exist_ok=True)
-    return JobManager()
+    artifact_root = Path(settings.artifact_root)
+    artifact_root.mkdir(parents=True, exist_ok=True)
+    # Do not inherit the engine's user-home default: a server/service account
+    # may not have a writable profile, and farm state must stay with the farm.
+    database = settings.database_url.removeprefix("sqlite:///")
+    state_path = Path(database).with_name("coordinator_state.sqlite3")
+    return JobManager(state_store=JobStateStore(state_path))

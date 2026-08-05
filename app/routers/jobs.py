@@ -10,6 +10,7 @@ utilization, local-vs-cloud mode, cloud entitlement) live in
 from __future__ import annotations
 
 from typing import Any, Optional
+from uuid import uuid4
 
 from engine.contracts import (
     BackendKind,
@@ -28,6 +29,9 @@ from app.pools import PoolStore, get_pool_store
 from app.scheduler import SchedulingRequirements, evaluate_all_workers, resource_health
 from app.tagging import TagStore, get_tag_store
 from app.ws import manager as ws_manager
+from app.telemetry import record
+from app.cloud_usage import complete as complete_cloud_usage, start as start_cloud_usage
+from engine.coordinator.artifacts import create_job_artifact_bundle, create_job_project_tree
 
 router = APIRouter(tags=["jobs"])
 
@@ -103,6 +107,8 @@ async def submit_job(
         result = await validate_cloud_api_key(authorization.removeprefix("Bearer ").strip(), settings)
         if not result.valid:
             raise HTTPException(status_code=403, detail=result.reason or "Invalid cloud entitlement.")
+        job.metadata["cloud_account_id"] = result.account_id
+        job.metadata["cloud_quota_gpu_hours"] = result.quota_gpu_hours_per_month
 
     resource_pool_id = payload.get("resource_pool_id")
     if resource_pool_id:
@@ -119,6 +125,11 @@ async def submit_job(
         if len(eligible_ids) == 1:
             job.runtime.preferred_worker_id = eligible_ids[0]
 
+    try:
+        create_job_project_tree(job, artifact_root=settings.artifact_root)
+        create_job_artifact_bundle(job, artifact_root=settings.artifact_root)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     job_id = manager.submit(job)
     await ws_manager.broadcast({"type": "job_submitted", "job_id": job_id})
     return {"job_id": job_id, "job": manager.get_job(job_id).spec.to_jsonable()}
@@ -159,6 +170,13 @@ async def report_progress(payload: dict[str, Any] = Body(...), manager=Depends(g
     """Record a training progress update and broadcast it live."""
 
     response = manager.handle_progress_report(ProgressReportRequest.from_jsonable(payload))
+    try:
+        job = manager.get_job(str(payload.get("job_id"))).spec
+        if job.runtime.backend == BackendKind.CLOUD and job.metadata.get("cloud_account_id"):
+            start_cloud_usage(job.job_id, str(job.metadata["cloud_account_id"]))
+    except KeyError:
+        pass
+    record(str(payload.get("worker_id", "unknown")), "progress", dict(payload.get("metrics") or {}))
     await ws_manager.broadcast({"type": "job_progress", "job_id": payload.get("job_id"), "metrics": payload.get("metrics")})
     return response.to_jsonable()
 
@@ -168,6 +186,8 @@ async def complete_job(payload: dict[str, Any] = Body(...), manager=Depends(get_
     """Mark a job complete and broadcast the result."""
 
     response = manager.handle_complete_job(CompleteJobRequest.from_jsonable(payload))
+    result_data = payload.get("result") or {}
+    complete_cloud_usage(str(result_data.get("job_id", "")))
     await ws_manager.broadcast({"type": "job_completed", "job_id": payload.get("job_id")})
     return response.to_jsonable()
 
@@ -200,3 +220,45 @@ def stop_all(manager=Depends(get_job_manager)) -> dict[str, Any]:
     """Stop every running/queued job."""
 
     return {"stopping": manager.stop_all_jobs()}
+
+
+@router.post("/jobs/{job_id}/cancel")
+async def cancel_job(job_id: str, manager=Depends(get_job_manager)) -> dict[str, Any]:
+    """Cooperatively cancel one queued or running job."""
+    try: manager.cancel(job_id)
+    except KeyError as exc: raise HTTPException(404, "Job not found") from exc
+    await ws_manager.broadcast({"type": "job_stopping", "job_id": job_id})
+    return {"job_id": job_id, "status": "stopping"}
+
+
+@router.post("/jobs/{job_id}/pause")
+async def pause_job(job_id: str, manager=Depends(get_job_manager)) -> dict[str, Any]:
+    try: managed = manager.get_job(job_id)
+    except KeyError as exc: raise HTTPException(404, "Job not found") from exc
+    if managed.spec.status.value not in {"queued", "assigned", "running"}: raise HTTPException(409, "Job cannot be paused in its current state.")
+    managed.spec.status = managed.spec.status.PAUSED; manager._persist_job(job_id)
+    await ws_manager.broadcast({"type": "job_paused", "job_id": job_id})
+    return {"job_id": job_id, "status": "paused"}
+
+
+@router.post("/jobs/{job_id}/resume")
+async def resume_job(job_id: str, manager=Depends(get_job_manager)) -> dict[str, Any]:
+    try: managed = manager.get_job(job_id)
+    except KeyError as exc: raise HTTPException(404, "Job not found") from exc
+    if managed.spec.status.value != "paused": raise HTTPException(409, "Job is not paused.")
+    managed.spec.status = managed.spec.status.QUEUED; managed.assigned_worker_id = None; manager._persist_job(job_id)
+    await ws_manager.broadcast({"type": "job_resumed", "job_id": job_id})
+    return {"job_id": job_id, "status": "queued"}
+
+
+@router.post("/jobs/{job_id}/restart")
+async def restart_job(job_id: str, settings: Settings = Depends(get_settings), manager=Depends(get_job_manager)) -> dict[str, Any]:
+    """Clone a completed/failed job into a fresh queued attempt."""
+    try: original = manager.get_job(job_id).spec
+    except KeyError as exc: raise HTTPException(404, "Job not found") from exc
+    clone = TrainingJobSpec.from_jsonable(original.to_jsonable()); clone.job_id = f"job_{uuid4().hex}"; clone.status = clone.status.QUEUED
+    clone.metadata = {**clone.metadata, "restarted_from_job_id": job_id}
+    create_job_project_tree(clone, artifact_root=settings.artifact_root); create_job_artifact_bundle(clone, artifact_root=settings.artifact_root)
+    manager.submit(clone)
+    await ws_manager.broadcast({"type": "job_restarted", "job_id": clone.job_id, "restarted_from_job_id": job_id})
+    return {"job_id": clone.job_id, "restarted_from_job_id": job_id}

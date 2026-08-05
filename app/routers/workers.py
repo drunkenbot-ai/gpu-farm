@@ -18,6 +18,7 @@ from app.config import Settings, get_settings
 from app.gpu_discovery import gpu_info_from_jsonable, validate_gpu
 from app.job_manager import get_job_manager
 from app.ws import manager as ws_manager
+from app.telemetry import record
 
 router = APIRouter(tags=["workers"])
 
@@ -85,6 +86,7 @@ async def heartbeat(payload: dict[str, Any] = Body(...), manager=Depends(get_job
     """Handle a worker heartbeat and broadcast the update to dashboards."""
 
     response = manager.handle_heartbeat(HeartbeatRequest.from_jsonable(payload))
+    record(str(payload.get("worker_id", "unknown")), "heartbeat", dict(payload.get("metrics") or {}))
     await ws_manager.broadcast({"type": "worker_heartbeat", "worker_id": payload.get("worker_id")})
     return response.to_jsonable()
 

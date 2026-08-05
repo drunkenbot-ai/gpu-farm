@@ -493,3 +493,22 @@ It must support two distinct workflows:
 * **Cloud GPU Farm** for subscription-based GPU-hour access with license validation
 
 The system should remain scalable and extensible for future expansion.
+
+---
+
+# Implementation Status (August 2026)
+
+The initial private-farm goal and the principal cloud workflow are now
+implemented. Local and cloud jobs execute the existing engine end-to-end;
+cloud access validates API keys and reports idempotent GPU-hour usage to
+cloud-service. Worker telemetry is persisted, project files use cached
+hash-manifest delta synchronization with resumable transfer, and completed
+outputs are uploaded to the manager.
+
+A dashboard, per-job lifecycle controls, a Windows tray worker with an
+autostart option, and a PyInstaller EXE build path are present. Remaining work
+before a production/public release includes database migrations, secured Farm
+Manager access and CORS, secure worker key storage, pre-dispatch cloud quota
+reservation, installer/signing/update infrastructure, richer dashboard UX,
+multi-GPU/multi-worker execution, and telemetry retention/aggregation. See
+`plan.md` for the detailed handoff plan.
